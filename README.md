@@ -10,7 +10,7 @@ pass one or more auto scaling groups and using instance credentials it will retu
 autobots --auto-scaling-groups <auto-scaling-group> --output private-dns
 
 output:
-ip-1-west-1.compute.internal ip-2-us-west-1.compute.internal ip-3-west-1.compute.internal ip-4-us-west-1.compute.internal
+ip-1-west-1.compute.internal ip-2-us-west-1.compute.internal ip-3-west-1.compute.internal
 ```
 
 ### Notes
