@@ -54,6 +54,10 @@ func RollOut(c *configRollOut) {
 		}
 	}
 
+	if len(instances) == 0 {
+		os.Exit(1)
+	}
+
 	resp, err := svcEc.DescribeInstances(
 		&ec2.DescribeInstancesInput{InstanceIds: instances},
 	)
