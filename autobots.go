@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
@@ -15,6 +17,33 @@ import (
 type configRollOut struct {
 	groups []string
 	filter string
+}
+
+type result struct {
+	instance   string
+	launchTime time.Time
+}
+
+type results []result
+
+func (r results) Len() int {
+	return len(r)
+}
+
+func (r results) Less(i, j int) bool {
+	return r[i].launchTime.Before(r[j].launchTime)
+}
+
+func (r results) Swap(i, j int) {
+	r[i], r[j] = r[j], r[i]
+}
+
+func (r results) Values() []string {
+	v := make([]string, len(r))
+	for idx := range r {
+		v[idx] = r[idx].instance
+	}
+	return v
 }
 
 func Assert(e error) {
@@ -64,7 +93,7 @@ func RollOut(c *configRollOut) {
 
 	Assert(err)
 
-	result := make([]string, 0)
+	values := make(results, 0)
 	for idx, _ := range resp.Reservations {
 		for _, inst := range resp.Reservations[idx].Instances {
 			value := ""
@@ -78,11 +107,12 @@ func RollOut(c *configRollOut) {
 			default:
 				value = *inst.PrivateIpAddress
 			}
-			result = append(result, value)
+			values = append(values, result{instance: value, launchTime: *inst.LaunchTime})
+			sort.Sort(values)
 		}
 	}
 
-	fmt.Println(strings.Join(result, " "))
+	fmt.Println(strings.Join(values.Values(), " "))
 }
 
 func main() {
