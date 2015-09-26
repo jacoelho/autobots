@@ -5,7 +5,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
@@ -14,43 +13,33 @@ import (
 	"github.com/codegangsta/cli"
 )
 
-type configRollOut struct {
-	groups []string
-	filter string
-}
-
-type result struct {
-	instance   string
-	launchTime time.Time
-}
-
-type results []result
-
-func (r results) Len() int {
-	return len(r)
-}
-
-func (r results) Less(i, j int) bool {
-	return r[i].launchTime.Before(r[j].launchTime)
-}
-
-func (r results) Swap(i, j int) {
-	r[i], r[j] = r[j], r[i]
-}
-
-func (r results) Values() []string {
-	v := make([]string, len(r))
-	for idx := range r {
-		v[idx] = r[idx].instance
-	}
-	return v
-}
-
 func Assert(e error) {
 	if e != nil {
 		fmt.Fprintln(os.Stderr, e.Error())
 		os.Exit(1)
 	}
+}
+
+func GetAutoScalingGroup(instance, region string) *string {
+	config := aws.NewConfig().WithRegion(region)
+	svcEc := ec2.New(config)
+
+	resp, err := svcEc.DescribeInstances(
+		&ec2.DescribeInstancesInput{InstanceIds: []*string{&instance}},
+	)
+
+	Assert(err)
+
+	for idx, _ := range resp.Reservations {
+		for _, inst := range resp.Reservations[idx].Instances {
+			for _, tag := range inst.Tags {
+				if *tag.Key == "aws:autoscaling:groupName" {
+					return tag.Value
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func RollOut(c *configRollOut) {
@@ -63,9 +52,22 @@ func RollOut(c *configRollOut) {
 	svcAsg := autoscaling.New(config)
 	svcEc := ec2.New(config)
 
-	autoScalingGroups := make([]*string, len(c.groups))
-	for idx, item := range c.groups {
-		autoScalingGroups[idx] = aws.String(item)
+	instanceId, err := svcMeta.GetMetadata("instance-id")
+	instanceASG := GetAutoScalingGroup(instanceId, region)
+
+	if instanceASG == nil && len(c.groups) == 0 {
+		fmt.Fprintln(os.Stderr, "missing autoscaling groups")
+		os.Exit(1)
+	}
+
+	autoScalingGroups := make([]*string, 0)
+
+	if instanceASG != nil {
+		autoScalingGroups = append(autoScalingGroups, instanceASG)
+	}
+
+	for _, item := range c.groups {
+		autoScalingGroups = append(autoScalingGroups, aws.String(item))
 	}
 
 	asg, err := svcAsg.DescribeAutoScalingGroups(
@@ -107,12 +109,16 @@ func RollOut(c *configRollOut) {
 			default:
 				value = *inst.PrivateIpAddress
 			}
-			values = append(values, result{instance: value, launchTime: *inst.LaunchTime})
-			sort.Sort(values)
+			if value != "" {
+				values = append(values, result{instance: value, launchTime: *inst.LaunchTime})
+			}
 		}
 	}
 
-	fmt.Println(strings.Join(values.Values(), " "))
+	if len(values) > 0 {
+		sort.Sort(values)
+		fmt.Println(strings.Join(values.Values(), " "))
+	}
 }
 
 func main() {
@@ -122,7 +128,7 @@ func main() {
 	app.Usage = "autobots assemble!"
 	app.Flags = []cli.Flag{
 		cli.StringSliceFlag{
-			Name:  "auto-scaling-groups",
+			Name:  "with-asg",
 			Usage: "auto scaling groups to list",
 		},
 		cli.StringFlag{
@@ -133,13 +139,8 @@ func main() {
 	}
 
 	app.Action = func(c *cli.Context) {
-		groups := c.StringSlice("auto-scaling-groups")
+		groups := c.StringSlice("with-asg")
 		filter := c.String("output")
-
-		if !c.GlobalIsSet("auto-scaling-groups") {
-			fmt.Println("need at least 1 auto-scaling-group")
-			os.Exit(1)
-		}
 
 		switch filter {
 		case "private-ip":
