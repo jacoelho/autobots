@@ -102,10 +102,14 @@ func RollOut(c *configRollOut) {
 			switch c.filter {
 			case "public-dns":
 				value = *inst.PublicDnsName
+			case "public-io":
+				value = *inst.PublicIpAddress
 			case "private-dns":
 				value = *inst.PrivateDnsName
 			case "hostname":
 				value = fmt.Sprintf("ip-%s", strings.Replace(*inst.PrivateIpAddress, ".", "-", -1))
+			case "instance-id":
+				value = *inst.InstanceId
 			default:
 				value = *inst.PrivateIpAddress
 			}
@@ -133,7 +137,7 @@ func main() {
 		},
 		cli.StringFlag{
 			Name:  "output",
-			Usage: "addresses format: private-ip|private-dns|public-dns|hostname",
+			Usage: "addresses format: private-ip|private-dns|public-ip|public-dns|hostname|instance-id",
 			Value: "private-ip",
 		},
 	}
@@ -147,9 +151,13 @@ func main() {
 			//
 		case "public-dns":
 			//
+		case "public-ip":
+			//
 		case "private-dns":
 			//
 		case "hostname":
+			//
+		case "instance-id":
 			//
 		default:
 			fmt.Println("invalid output")
